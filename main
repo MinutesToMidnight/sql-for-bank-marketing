@@ -1,0 +1,70 @@
+import sqlite3 as sq
+import pandas as pd
+from Visualizer import Visualizer
+
+
+if __name__ == "__main__":
+    def csv_to_sql(path_to_csv, path_to_db, table_name, binary=(), keywords_for_binary={}):
+        with sq.connect(path_to_db) as con:
+            data = pd.read_csv(path_to_csv, sep=';')
+
+            binary = set(binary)
+            columns = data.columns.to_list()
+            columns_types = data.dtypes
+            cur = con.cursor()
+
+            req = f"CREATE TABLE IF NOT EXISTS {table_name}("
+
+            for col in columns:
+                if col in keywords_for_binary:
+                    data[col] = data[col].map(keywords_for_binary[col])
+                    req += f"\'{col}\' BOOLEAN, "
+                elif col in binary:
+                    req += f"\'{col}\' BOOLEAN, "
+                else:
+                    if "int" in str(columns_types[col]):
+                        req += f"\'{col}\' INT, "
+                    elif "float" in str(columns_types[col]):
+                        req += f"\'{col}\' REAL, "
+                    else:
+                        req += f"\'{col}\' VARCHAR(255), "
+            req = req[:-2] + ')'
+            data.to_sql(table_name, con, if_exists='append', index=False)
+            cur.execute(req)
+
+    def select(path_to_db, table_name="", where="", sum_col="", avg_col="", cols=()):
+        with sq.connect(path_to_db) as con:
+            cur = con.cursor()
+            if not where and not sum_col and not avg_col and not cols:
+                req = f"SELECT * FROM {table_name}"
+            if (sum_col and avg_col) or (sum_col and cols) or (avg_col and cols):
+                raise ValueError("Need to be one of the aggregation function or numerical columns only")
+            elif sum_col:
+                req = f"SELECT SUM({sum_col}) FROM {table_name}"
+            elif avg_col:
+                req = f"SELECT AVG({avg_col}) FROM {table_name}"
+            else:
+                cols = ",".join(cols)
+                req = f"SELECT {cols} FROM {table_name}"
+            if where:
+                req += f"WHERE {where}"
+            cur.execute(req)
+            return cur.fetchall()
+
+
+    path_to_csv = "D:/Python/Python Projects/PycharmProjects/bank-full.csv"
+    path_to_db = "D:/db/bank-marketing.db"
+    binary = ["y"]
+    keywords_for_binary = {"y": {"yes": 1, "no": 0}}
+    # csv_to_sql(path_to_csv, path_to_db, "bank_marketing", binary=["y"], keywords_for_binary=keywords_for_binary)
+    cols = ["age", "balance", "day", "duration", "pdays", "y"]
+    data = pd.DataFrame(select(path_to_db, "bank_marketing", cols=cols), columns=cols)
+    print(data.head(min(data.shape[0], 100)).to_string(index=False))
+    visualize = Visualizer()
+    graph_funcs = visualize.get_graphs()
+    for method in graph_funcs:
+        method(data, cols)
+    print()
+    print(f"Sum of balance: {select(path_to_db, 'bank_marketing', sum_col='balance')[0][0]}")
+
+
